@@ -81,7 +81,7 @@ def get_summary(chunk):
 
 	return summary
 
-def store_info(text, memory_path, chunk_sz = 700, max_memory = 100):
+def store_info(text, memory_path, chunk_sz = 700, max_memory = 500):
 	info = []
 	text = text.replace("\n", " ").split()
 	# raise error if the anticipated api usage is too massive
@@ -95,18 +95,17 @@ def store_info(text, memory_path, chunk_sz = 700, max_memory = 100):
 		attempts = 0
 		while True:
 			try:
-				summary = get_summary(chunk)
+				#summary = get_summary(chunk)
 				embd = get_embedding(chunk)
-				summary_embd = get_embedding(summary)
+				#summary_embd = get_embedding(summary)
 				item = {
 					"id": len(info),
 					"text": chunk,
 					"embd": embd,
-					"summary": summary,
-					"summary_embd": summary_embd,
+					#"summary": summary,
+					#"summary_embd": summary_embd,
 				}
 				info.append(item)
-				time.sleep(3)  # up to 20 api calls per min
 				break
 			except Exception as e:
 				attempts += 1
@@ -130,14 +129,14 @@ def load_info(memory_path):
 def retrieve(q_embd, info):
 	# return the indices of top three related texts
 	text_embds = []
-	summary_embds = []
+	#summary_embds = []
 	for item in info:
 		text_embds.append(item["embd"])
-		summary_embds.append(item["summary_embd"])
+		#summary_embds.append(item["summary_embd"])
 	# compute the cos sim between info_embds and q_embd
 	text_cos_sims = np.dot(text_embds, q_embd) / (norm(text_embds, axis=1) * norm(q_embd))
-	summary_cos_sims = np.dot(summary_embds, q_embd) / (norm(summary_embds, axis=1) * norm(q_embd))
-	cos_sims = text_cos_sims + summary_cos_sims
+	#summary_cos_sims = np.dot(summary_embds, q_embd) / (norm(summary_embds, axis=1) * norm(q_embd))
+	cos_sims = text_cos_sims #+ summary_cos_sims
 	top_args = np.argsort(cos_sims).tolist()
 	top_args.reverse()
 	indices = top_args[0:3]
