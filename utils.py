@@ -13,6 +13,8 @@ from numpy.linalg import norm
 import os
 import hashlib
 import tiktoken
+import pdfplumber
+
 tokenizer = tiktoken.get_encoding("cl100k_base")
 with open("openai_api_key.txt", 'r', encoding='utf8') as f:
     openai.api_key = f.readlines()[0].strip()
@@ -45,16 +47,16 @@ def get_text(text_path):
         full_text = ""
         num_pages = 0
         start = False
-        with fitz.open(text_path) as doc:
-            for page in doc:
-                text = page.get_text()
+        with pdfplumber.open(text_path) as doc:
+            for page in doc.pages:
+                text = page.extract_text()
                 if '"act" mean' in text.lower() or '“act” mean' in text.lower() or start:
                     start = True
                 else:
                     continue
                 num_pages += 1
                 full_text += f"This is page number {num_pages} \n" + text + "\n"
-        text = f"This is a {num_pages}-page document.\n" + full_text
+        text = full_text
     elif ".doc" in suffix:
         doc = docx.Document(text_path)
         fullText = []
@@ -67,7 +69,7 @@ def get_text(text_path):
         text = '\n'.join(lines)
     else:
         raise ValueError("Invalid document path!")
-    text = " ".join(text.split())
+    #text = " ".join(text.split())
     return text
 
 def get_embedding(text, model="text-embedding-ada-002"):
