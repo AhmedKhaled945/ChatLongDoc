@@ -14,6 +14,12 @@ import os
 import hashlib
 import tiktoken
 import pdfplumber
+import re
+
+from sentence_transformers import SentenceTransformer
+
+
+embedding_model = SentenceTransformer('all-mpnet-base-v2')
 
 tokenizer = tiktoken.get_encoding("cl100k_base")
 with open("openai_api_key.txt", 'r', encoding='utf8') as f:
@@ -29,7 +35,6 @@ class bcolors:
     ENDC = '\033[0m'
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
-
 
 
 def get_text(text_path):
@@ -75,6 +80,7 @@ def get_text(text_path):
 def get_embedding(text, model="text-embedding-ada-002"):
     text = text.replace("\n", " ")
     return openai.Embedding.create(input = [text], model=model)['data'][0]['embedding']
+    #return np.squeeze(embedding_model.encode([text])).tolist()
 
 def get_summary(chunk):
     content = "The following is a passage fragment. Please summarize what information the readers can take away from it:"
@@ -88,14 +94,28 @@ def get_summary(chunk):
 
     return summary
 
+def extract_sections(text):
+    pattern = r"\n(\d+[.-]\d?)"
+    text_pieces = re.split(pattern, text)
+    res = re.findall(pattern, text)
+    if len(text_pieces) == 2*len(res) + 1:
+        text_pieces = text_pieces[1:]
+    text_sections = [text_pieces[i] + text_pieces[i+1] for i in range(0,len(text_pieces), 2)]
+    return text_sections
+
 def store_info(text, memory_path, chunk_sz = 700, max_memory = 500):
     info = []
-    text = text.replace("\n", " ").split()
+    #ls_sections = extract_sections(text)
+    #text = text.replace("\n", " ").split()
     # raise error if the anticipated api usage is too massive
     if (len(text) / chunk_sz) >= max_memory:
         raise ValueError("Processing is aborted due to high anticipated costs.")
-    for idx in tqdm(range(0, len(text), chunk_sz)):
-        chunk = " ".join(text[idx: idx + chunk_sz])
+    for chunk in tqdm(text.split('This is page number')):
+        chunk = chunk.replace("\n", " ")
+        chunk = 'This is page number' + chunk
+    #for idx in tqdm(range(0, len(text), chunk_sz)):
+
+        #chunk = " ".join(text[idx: idx + chunk_sz])
         if len(tokenizer.encode(chunk)) > chunk_sz * 3:
             print("Skipped an uninformative chunk.")
             continue
@@ -103,7 +123,7 @@ def store_info(text, memory_path, chunk_sz = 700, max_memory = 500):
         while True:
             try:
                 #summary = get_summary(chunk)
-                embd = get_embedding(chunk)
+                embd = get_embedding(chunk)#.tolist()
                 #summary_embd = get_embedding(summary)
                 item = {
                     "id": len(info),
@@ -142,22 +162,19 @@ def retrieve(q_embd, info):
         #summary_embds.append(item["summary_embd"])
     # compute the cos sim between info_embds and q_embd
     text_cos_sims = np.dot(text_embds, q_embd) / (norm(text_embds, axis=1) * norm(q_embd))
+    #text_sims = norm(text_embds-q_embd)
     #summary_cos_sims = np.dot(summary_embds, q_embd) / (norm(summary_embds, axis=1) * norm(q_embd))
     cos_sims = text_cos_sims #+ summary_cos_sims
     top_args = np.argsort(cos_sims).tolist()
     top_args.reverse()
     indices = top_args[0:3]
+    print(indices)
     return indices
 
 def chatGPT_api(messages):
     completion = openai.ChatCompletion.create(
-    model = 'gpt-3.5-turbo',
-    messages=messages,
-    temperature = 1,
-    top_p = 0.95,
-    # max_tokens=2000,
-    frequency_penalty = 0.0,
-    presence_penalty = 0.0
+    model = 'gpt-4',
+    messages=messages
     )
 
     return completion.choices[0].message
@@ -165,12 +182,12 @@ def chatGPT_api(messages):
 def get_qa_content(q, retrieved_text):
     content = "After reading some relevant passage fragments from the same document, please respond to the following query. Note that there may be typographical errors in the passages due to the text being fetched from a PDF file or web page."
 
-    content += "\nQuery: " + q
+    content += "\nQuery: " + q + ', Which part of the text holds the answer, along with its page number, section number, subsection number in json format with keys (text, page, section and subsection), do remember to retrieve the exact text used in answer and not add anything to it like passage number, and just give the json object as an answer even if you found no answer'
 
     for i in range(len(retrieved_text)):
         content += "\nPassage " + str(i + 1) + ": " + retrieved_text[i]
 
-    content += "\nAvoid explicitly using terms such as 'passage 1, 2 or 3' in your answer as the questioner may not know how the fragments are retrieved. Please use the same language as in the query to respond."
+    #content += "\nAvoid explicitly using terms such as 'passage 1, 2 or 3' in your answer as the questioner may not know how the fragments are retrieved. Please use the same language as in the query to respond."
 
     return content
 
